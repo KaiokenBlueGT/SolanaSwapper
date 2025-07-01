@@ -942,31 +942,55 @@ namespace GeometrySwapper
                 Console.Write("\nSave changes to the target level? (y/n): ");
                 if (Console.ReadLine()?.Trim().ToLower() == "y")
                 {
-                    try
-                    {
-                        string? savePath = targetLevel.path;
-                        if (savePath != null)
-                        {
-                            Console.WriteLine($"Saving level to {savePath}...");
-                            targetLevel.Save(savePath);
-                            Console.WriteLine("✅ Target level saved successfully");
-                        }
-                        else
-                        {
-                            Console.WriteLine("❌ Target level path is null, cannot save changes");
-                            return false;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"❌ Error saving target level: {ex.Message}");
-                        Console.WriteLine(ex.StackTrace); // Add stack trace for better debugging
-                        return false;
-                    }
+                    // Use the robust save method to preserve all level data
+                    SaveLevelWithGrindPathValidation(targetLevel);
                 }
             }
 
             return success;
+        }
+
+        /// <summary>
+        /// Saves the level with proper validation for grind paths and other critical data.
+        /// </summary>
+        public static void SaveLevelWithGrindPathValidation(Level level)
+        {
+            if (level == null || string.IsNullOrEmpty(level.path))
+            {
+                Console.WriteLine("❌ Cannot save level: Invalid level data or path.");
+                return;
+            }
+
+            try
+            {
+                Console.WriteLine("\n=== Preparing Level For Final Save (Moby Importer) ===");
+
+                // 1. THIS IS THE FIX: Restore grind paths and splines from the original file
+                //    to completely undo any in-memory corruption that happened during the import process.
+                GrindPathSwapper.RestoreAndValidateGrindPaths(level);
+
+                // 2. Ensure other critical collections are not null
+                if (level.pVars == null) level.pVars = new List<byte[]>();
+
+                // 3. Update transform matrices for all mobys (this is safe)
+                if (level.mobs != null)
+                {
+                    foreach (var moby in level.mobs)
+                    {
+                        moby.UpdateTransformMatrix();
+                    }
+                }
+
+                Console.WriteLine("\nProceeding to save the level...");
+                Console.WriteLine($"   Saving to: {level.path}");
+                level.Save(level.path);
+                Console.WriteLine("✅ Target level saved successfully.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ FATAL ERROR during save process: {ex.Message}");
+                Console.WriteLine(ex.StackTrace);
+            }
         }
     }
 }

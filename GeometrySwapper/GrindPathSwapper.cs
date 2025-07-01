@@ -37,6 +37,52 @@ namespace GeometrySwapper
         }
 
         /// <summary>
+        /// Restores grind paths and splines from the original file before validating them.
+        /// This is a robust way to prevent data loss from in-memory corruption.
+        /// </summary>
+        public static void RestoreAndValidateGrindPaths(Level level)
+        {
+            if (level == null || string.IsNullOrEmpty(level.path) || !File.Exists(level.path))
+            {
+                Console.WriteLine("❌ FATAL: Cannot restore grind paths because the original level path is unknown or invalid.");
+                Console.WriteLine("         Running standard validation on potentially corrupt in-memory data as a last resort...");
+                ValidateGrindPathReferences(level);
+                return;
+            }
+
+            Console.WriteLine("\n🔄 RESTORING GRIND PATHS AND SPLINES FROM DISK...");
+            Console.WriteLine($"   Source file: {level.path}");
+
+            try
+            {
+                // Load a fresh, clean copy of the level from disk. This is the key step.
+                Level freshLevel = new Level(level.path);
+                Console.WriteLine("   ✅ Successfully loaded a fresh copy of the level from disk.");
+
+                // Restore splines from the clean copy
+                int originalSplineCount = level.splines?.Count ?? 0;
+                level.splines = freshLevel.splines ?? new List<Spline>();
+                Console.WriteLine($"   ✅ Splines restored. Was: {originalSplineCount}, Now: {level.splines.Count}");
+
+                // Restore grind paths from the clean copy
+                int originalGrindPathCount = level.grindPaths?.Count ?? 0;
+                level.grindPaths = freshLevel.grindPaths ?? new List<GrindPath>();
+                Console.WriteLine($"   ✅ Grind Paths restored. Was: {originalGrindPathCount}, Now: {level.grindPaths.Count}");
+
+                // Now, run the standard validation to ensure everything is consistent after restoration
+                Console.WriteLine("\n   VALIDATING RESTORED DATA...");
+                ValidateGrindPathReferences(level);
+                Console.WriteLine("   ✅ Validation of restored data complete.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ CRITICAL ERROR during grind path restoration: {ex.Message}");
+                Console.WriteLine("   Falling back to standard validation on existing (and likely corrupt) in-memory data.");
+                ValidateGrindPathReferences(level);
+            }
+        }
+
+        /// <summary>
         /// Swaps RC2 grind paths with RC1 Oltanis grind paths
         /// </summary>
         /// <param name="targetLevel">RC2 level to modify</param>

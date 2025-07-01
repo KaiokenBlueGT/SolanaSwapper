@@ -25,6 +25,7 @@ using static LibReplanetizer.DataFunctions;
 using static LibReplanetizer.Utilities;
 using Texture = LibReplanetizer.Texture;
 using SixLabors.ImageSharp;
+using Buffer = System.Buffer;
 
 namespace Replanetizer.Frames
 {
@@ -131,6 +132,28 @@ namespace Replanetizer.Frames
                         var res = CrossFileDialog.SaveFile();
                         if (res.Length > 0)
                         {
+                            // --- PATCH: Ensure collision bytes are updated before saving ---
+                            level.UpdateCollisionBytesFromChunks();
+                            try
+                            {
+                                LOGGER.Info("[DIAG] Save As menu item triggered!");
+                                Console.WriteLine("[DIAG] Save As menu item triggered!");
+                                if (level.collBytesEngine != null && level.collBytesEngine.Length > 0)
+                                {
+                                    LOGGER.Info($"[DIAG] collBytesEngine length: {level.collBytesEngine.Length}");
+                                    Console.WriteLine($"[DIAG] collBytesEngine length: {level.collBytesEngine.Length}");
+                                }
+                                else
+                                {
+                                    LOGGER.Warn("[DIAG] collBytesEngine is null or empty before save!");
+                                    Console.WriteLine("[DIAG] collBytesEngine is null or empty before save!");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                LOGGER.Error(ex, "[DIAG] Exception in Save As diagnostics");
+                                Console.WriteLine($"[DIAG] Exception: {ex}");
+                            }
                             level.Save(res);
                         }
                     }
@@ -209,6 +232,53 @@ namespace Replanetizer.Frames
                                 fs.Close();
                             }
                             InvalidateView();
+                        }
+                        // NEW: Generate collision from current terrain fragments
+                        if (ImGui.MenuItem("Generate Collision from Terrain"))
+                        {
+                            enableCameraInfo = true; // Just to see if UI changes
+                            LOGGER.Info("[UI] Generate Collision from Terrain selected."); // NLog
+                            Console.WriteLine("[UI] Generate Collision from Terrain selected."); // Console
+                            ImGui.OpenPopup("CollisionGenPopup");
+                            GenerateCollisionFromCurrentTerrain();
+                        }
+                        // NEW: Convert OBJ to RCC
+                        if (ImGui.MenuItem("Convert OBJ to RCC"))
+                        {
+                            var objPath = CrossFileDialog.OpenFile(filter: ".obj");
+                            if (!string.IsNullOrEmpty(objPath))
+                            {
+                                var rccPath = CrossFileDialog.SaveFile("Save RCC file", ".rcc");
+                                if (!string.IsNullOrEmpty(rccPath))
+                                {
+                                    Console.WriteLine($"📥 Converting OBJ to RCC: {Path.GetFileName(objPath)} → {Path.GetFileName(rccPath)}");
+                                    var importer = new ObjTerrainImporter();
+                                    var terrainFragments = importer.ImportObjAsTerrain(objPath, level.textures);
+                                    if (terrainFragments.Count > 0)
+                                    {
+                                        Console.WriteLine($"[DEBUG] terrainFragments.Count after OBJ import: {terrainFragments.Count}");
+                                        // --- CRITICAL FIX: Use a minimal stub Level for collision generation ---
+                                        var tempLevel = new LibReplanetizer.Level();
+                                        tempLevel.textures = level.textures;
+                                        LibReplanetizer.ObjTerrainImporter.GenerateAndAssignCollision(tempLevel, terrainFragments);
+                                        if (tempLevel.collisionChunks != null && tempLevel.collisionChunks.Count > 0)
+                                        {
+                                            var collision = tempLevel.collisionChunks[0];
+                                            var rccBytes = LibReplanetizer.DataFunctions.SerializeCollisionToRccChunked(collision);
+                                            File.WriteAllBytes(rccPath, rccBytes);
+                                            Console.WriteLine($"✅ RCC file created: {rccPath}");
+                                        }
+                                        else
+                                        {
+                                            Console.WriteLine("❌ Collision data was not generated or is empty.");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Console.WriteLine("❌ No terrain fragments found in OBJ file.");
+                                    }
+                                }
+                            }
                         }
                         ImGui.EndMenu();
                     }
@@ -410,9 +480,21 @@ namespace Replanetizer.Frames
                     $"Rotation: (yaw: {camRotZ:F4}, pitch: {camRotX:F4})"
                 );
 
-                movingAvgFrametime = movingAvgFrametime * 0.95f + deltaTime * 0.05f;
+                // FIX 1: Add safety checks for deltaTime to prevent crashes
+                if (deltaTime > 0.0f && !float.IsInfinity(deltaTime) && !float.IsNaN(deltaTime))
+                {
+                    // Clamp deltaTime to reasonable bounds (max 1 second frame time)
+                    float clampedDeltaTime = MathF.Min(deltaTime, 1.0f);
+                    movingAvgFrametime = movingAvgFrametime * 0.95f + clampedDeltaTime * 0.05f;
+                    
+                    // Ensure movingAvgFrametime stays within reasonable bounds
+                    movingAvgFrametime = MathF.Max(movingAvgFrametime, 0.001f); // Min 1000 FPS
+                    movingAvgFrametime = MathF.Min(movingAvgFrametime, 1.0f);   // Max 1 FPS
+                }
+                
                 float fps = MathF.Round(1.0f / movingAvgFrametime);
                 float frametime = ((float) (MathF.Round(10000.0f * movingAvgFrametime))) / 10.0f;
+                
                 switch (fps)
                 {
                     case < 30:
@@ -434,6 +516,39 @@ namespace Replanetizer.Frames
 
             }
             ImGui.End();
+        }
+
+        /// <param name="allowNewGrab">whether a new click will begin grabbing</param>
+        /// <returns>whether the cursor is being grabbed</returns>
+        private bool CheckForRotationInput(float deltaTime, bool allowNewGrab)
+        {
+            if (mouseGrabHandler.TryGrabMouse(wnd, allowNewGrab))
+            {
+                // FIX 2: Only disable mouse when we're actually in the level viewport
+                // and only for this specific frame, not globally
+                var isMouseInLevelViewport = ImGui.IsWindowHovered() && 
+                                           contentRegion.Contains(new Point((int) wnd.MousePosition.X, (int) wnd.MousePosition.Y));
+                
+                if (isMouseInLevelViewport)
+                {
+                    ImGui.GetIO().ConfigFlags |= ImGuiConfigFlags.NoMouse;
+                }
+            }
+            else
+            {
+                // FIX 2: Always restore mouse input when not grabbing
+                ImGui.GetIO().ConfigFlags &= ~ImGuiConfigFlags.NoMouse;
+                return false;
+            }
+
+            Vector2 rot = new Vector2(wnd.MouseState.Delta.X * 0.016666f, wnd.MouseState.Delta.Y * 0.016666f);
+
+            rot *= camera.speed;
+
+            camera.Rotate(rot);
+
+            InvalidateView();
+            return true;
         }
 
         private void UpdateWindowSize()
@@ -607,6 +722,58 @@ namespace Replanetizer.Frames
             selectedObjects.Clear();
 
             InvalidateView();
+            // Do NOT generate collision automatically here.
+        }
+
+        /// <summary>
+        /// Manually generate collision from the current terrain fragments.
+        /// </summary>
+        public void GenerateCollisionFromCurrentTerrain()
+        {
+            if (level?.terrainEngine?.fragments == null)
+            {
+                LOGGER.Warn("[CollisionGen] terrainEngine or fragments is null.");
+                return;
+            }
+            if (level.terrainEngine.fragments.Count == 0)
+            {
+                LOGGER.Warn("[CollisionGen] No terrain fragments available for collision generation (count=0).");
+                return;
+            }
+
+            LOGGER.Info($"[CollisionGen] Generating collision from {level.terrainEngine.fragments.Count} terrain fragments...");
+            LibReplanetizer.ObjTerrainImporter.GenerateAndAssignCollision(level, level.terrainEngine.fragments);
+
+            if (level.collisionChunks != null && level.collisionChunks.Count > 0)
+            {
+                LOGGER.Info("[CollisionGen] Collision generation successful.");
+            }
+            else
+            {
+                LOGGER.Warn("[CollisionGen] Collision generation failed or produced no chunks.");
+            }
+
+            InvalidateView();
+        }
+
+        public static bool operator ==(LevelFrame a, LevelFrame b)
+        {
+            return a?.Equals(b) ?? b is null;
+        }
+
+        public static bool operator !=(LevelFrame a, LevelFrame b)
+        {
+            return !(a == b);
+        }
+
+        public override bool Equals(object? obj)
+        {
+            return obj is LevelFrame frame && frameName == frame.frameName;
+        }
+
+        public override int GetHashCode()
+        {
+            return HashCode.Combine(frameName);
         }
 
         public void SelectedObjectsOnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -721,50 +888,6 @@ namespace Replanetizer.Frames
                 clipboard.Copy(selectedObjects);
             if (KEYMAP.IsPressed(Keybinds.Paste))
                 clipboard.Apply(level, this);
-        }
-
-        /// <param name="allowNewGrab">whether a new click will begin grabbing</param>
-        /// <returns>whether the cursor is being grabbed</returns>
-        private bool CheckForRotationInput(float deltaTime, bool allowNewGrab)
-        {
-            if (mouseGrabHandler.TryGrabMouse(wnd, allowNewGrab))
-                ImGui.GetIO().ConfigFlags |= ImGuiConfigFlags.NoMouse;
-            else
-            {
-                ImGui.GetIO().ConfigFlags &= ~ImGuiConfigFlags.NoMouse;
-                return false;
-            }
-
-            Vector2 rot = new Vector2(wnd.MouseState.Delta.X * 0.016666f, wnd.MouseState.Delta.Y * 0.016666f);
-
-            rot *= camera.speed;
-
-            camera.Rotate(rot);
-
-            InvalidateView();
-            return true;
-        }
-
-        private void CheckForMovementInput(float deltaTime)
-        {
-            float moveSpeed = KEYMAP.IsDown(Keybinds.MoveFastModifier) ? 40 : 10;
-            Vector3 moveDir = GetInputAxes();
-            if (moveDir.Length > 0)
-            {
-                moveDir *= moveSpeed * deltaTime;
-                camera.TransformedTranslate(moveDir);
-
-                InvalidateView();
-            }
-
-            Vector2 rotateDir = GetInputRotationAxes();
-            if (rotateDir.Length > 0)
-            {
-                rotateDir *= deltaTime;
-                camera.Rotate(rotateDir);
-
-                InvalidateView();
-            }
         }
 
         private void HandleToolUpdates(Vector3 mouseRay, Vector3 direction)
@@ -1069,6 +1192,28 @@ namespace Replanetizer.Frames
         public void AddSubFrame(Frame frame)
         {
             if (!subFrames.Contains(frame)) subFrames.Add(frame);
+        }
+
+        private void CheckForMovementInput(float deltaTime)
+        {
+            float moveSpeed = KEYMAP.IsDown(Keybinds.MoveFastModifier) ? 40 : 10;
+            Vector3 moveDir = GetInputAxes();
+            if (moveDir.Length > 0)
+            {
+                moveDir *= moveSpeed * deltaTime;
+                camera.TransformedTranslate(moveDir);
+
+                InvalidateView();
+            }
+
+            Vector2 rotateDir = GetInputRotationAxes();
+            if (rotateDir.Length > 0)
+            {
+                rotateDir *= deltaTime;
+                camera.Rotate(rotateDir);
+
+                InvalidateView();
+            }
         }
     }
 

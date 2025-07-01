@@ -555,6 +555,16 @@ namespace LibReplanetizer.LevelObjects
 
         private byte[] SerializeRC3()
         {
+            // Ensure correct byteSize is set based on chunkCount
+            if (chunkCount > 1)
+            {
+                byteSize = 0x104; // Ensure this is set correctly
+            }
+            else
+            {
+                byteSize = 0x84;
+            }
+
             byte[] bytes = new byte[byteSize];
 
             WriteUint(bytes, 0x00, backgroundColor.R);
@@ -670,6 +680,35 @@ namespace LibReplanetizer.LevelObjects
             unknownBytes.CopyTo(bytes, 0x84);
 
             return bytes;
+        }
+
+        public void CopyFrom(LevelVariables other)
+        {
+            if (other == null) return;
+            
+            // Copy only the core properties that are definitely present
+            // Instead of trying to copy properties that don't exist
+            
+            // Core level properties that exist in all game types
+            this.backgroundColor = other.backgroundColor;
+            this.fogColor = other.fogColor;
+            this.fogNearDistance = other.fogNearDistance;
+            this.fogFarDistance = other.fogFarDistance;
+            this.fogNearIntensity = other.fogNearIntensity;
+            this.fogFarIntensity = other.fogFarIntensity;
+            this.deathPlaneZ = other.deathPlaneZ;
+            this._isSphericalWorld = other._isSphericalWorld;
+            
+            // Copy ship-related data
+            this.sphereCentre = other.sphereCentre;
+            this.shipPosition = other.shipPosition;
+            this.shipRotation = other.shipRotation;
+            this.shipPathID = other.shipPathID;
+            this.shipCameraStartID = other.shipCameraStartID;
+            this.shipCameraEndID = other.shipCameraEndID;
+            
+            // Note: We don't copy the chunk data as it's game-specific
+            // and could cause serialization issues
         }
     }
 }

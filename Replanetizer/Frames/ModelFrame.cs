@@ -766,9 +766,19 @@ namespace Replanetizer.Frames
         private bool CheckForRotationInput(float deltaTime, bool allowNewGrab)
         {
             if (MOUSE_GRAB_HANDLER.TryGrabMouse(wnd, allowNewGrab))
-                ImGui.GetIO().ConfigFlags |= ImGuiConfigFlags.NoMouse;
+            {
+                // FIX 2: Only disable mouse when we're actually in the model viewport
+                var isMouseInModelViewport = ImGui.IsWindowHovered() && 
+                                             contentRegion.Contains(new Point((int) wnd.MousePosition.X, (int) wnd.MousePosition.Y));
+                
+                if (isMouseInModelViewport)
+                {
+                    ImGui.GetIO().ConfigFlags |= ImGuiConfigFlags.NoMouse;
+                }
+            }
             else
             {
+                // FIX 2: Always restore mouse input when not grabbing
                 ImGui.GetIO().ConfigFlags &= ~ImGuiConfigFlags.NoMouse;
                 return false;
             }

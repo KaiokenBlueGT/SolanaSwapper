@@ -27,9 +27,15 @@ namespace LibReplanetizer
 
         public GameType game;
 
+        // Add these two properties
+        public int SplinePointer { get; set; }
+        public int SplineCount { get; set; }
+        public int CameraPointer { get; set; }
+        public int CameraCount { get; set; }
+
         //Models
-        public List<Model> mobyModels;
-        public List<Model> tieModels;
+        public List<Model> mobyModels = new List<Model>();
+        public List<Model> tieModels = new List<Model>();
         public List<Model> shrubModels;
         public List<Model> gadgetModels;
         public List<Model> armorModels;
@@ -403,6 +409,27 @@ namespace LibReplanetizer
             valid = true;
         }
 
+        // Minimal constructor for stub Level (for OBJ to RCC conversion)
+        public Level() {
+            valid = false;
+            path = null;
+            game = GameType.RaC1; // Default, not used
+            mobyModels = new List<Model>();
+            tieModels = new List<Model>();
+            shrubModels = new List<Model>();
+            gadgetModels = new List<Model>();
+            armorModels = new List<Model>();
+            collisionChunks = new List<Collision>();
+            textures = new List<Texture>();
+            armorTextures = new List<List<Texture>>();
+            gadgetTextures = new List<Texture>();
+            terrainChunks = new List<Terrain>();
+            collBytesChunks = new List<byte[]>();
+            missions = new List<Mission>();
+            mobyloadModels = new List<List<MobyModel>>();
+            mobyloadTextures = new List<List<Texture>>();
+        }
+
         // Copies data like gadget models from gadget files etc into engine data.
         public void EmplaceCommonData()
         {
@@ -460,6 +487,17 @@ namespace LibReplanetizer
             });
         }
 
+        /// <summary>
+        /// Ensures that the collision data is serialized from the current collisionChunks (if present)
+        /// </summary>
+        public void UpdateCollisionBytesFromChunks()
+        {
+            if (collisionChunks != null && collisionChunks.Count > 0 && collisionChunks[0] != null)
+            {
+                collBytesEngine = LibReplanetizer.DataFunctions.SerializeCollisionToRccChunked(collisionChunks[0]);
+            }
+        }
+
         public void Save(string outputFile)
         {
             string? directory;
@@ -473,6 +511,9 @@ namespace LibReplanetizer
             }
 
             if (directory == null) return;
+
+            // --- CRITICAL PATCH: Update collision bytes before saving ---
+            UpdateCollisionBytesFromChunks();
 
             EngineSerializer engineSerializer = new EngineSerializer();
             engineSerializer.Save(this, directory);

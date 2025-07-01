@@ -1,11 +1,4 @@
-﻿// Copyright (C) 2018-2025, The Replanetizer Contributors.
-// Replanetizer is free software: you can redistribute it
-// and/or modify it under the terms of the GNU General Public
-// License as published by the Free Software Foundation,
-// either version 3 of the License, or (at your option) any later version.
-// Please see the LICENSE.md file for more details.
-
-using LibReplanetizer;
+﻿using LibReplanetizer;
 using LibReplanetizer.LevelObjects;
 using LibReplanetizer.Models;
 using LibReplanetizer.Serializers;
@@ -147,6 +140,8 @@ namespace GeometrySwapper
                             dataval = templateMoby?.dataval ?? 0,
 
                             // Set required unknown values
+                            groupIndex = -1,
+                            pvarIndex = -1, // Temporary for now, just for static mobys
                             unk7A = 8192,
                             unk7B = 0,
                             unk8A = 16384,
@@ -235,38 +230,30 @@ namespace GeometrySwapper
             if (level.mobs != null)
             {
                 level.mobyIds = level.mobs.Select(m => m.mobyID).ToList();
-                Console.WriteLine($"  ✅ Updated mobyIds list with {level.mobyIds.Count} entries");
             }
 
-            // 2. Fix model references for each moby
-            if (level.mobs != null && level.mobyModels != null)
+            // 2. Validate and FIX grind path data before saving
+            Console.WriteLine("  Validating and preserving existing grind path data...");
+            if (level.grindPaths != null && level.splines != null)
             {
-                int fixedRefs = 0;
-                foreach (var moby in level.mobs)
+                // Remove grind paths with null or dangling spline references
+                int removedCount = level.grindPaths.RemoveAll(p => p.spline == null || !level.splines.Contains(p.spline));
+                if (removedCount > 0)
                 {
-                    if (moby.model == null || moby.model.id != moby.modelID)
-                    {
-                        var correctModel = level.mobyModels.FirstOrDefault(m => m.id == moby.modelID);
-                        if (correctModel != null)
-                        {
-                            moby.model = correctModel;
-                            fixedRefs++;
-                        }
-                    }
+                    Console.WriteLine($"  ✅ Removed {removedCount} grind path(s) with invalid spline references.");
                 }
-                if (fixedRefs > 0) Console.WriteLine($"  ✅ Fixed {fixedRefs} invalid model references");
+            }
+            else
+            {
+                // Ensure lists exist to prevent crashes on save
+                if (level.grindPaths == null) level.grindPaths = new List<GrindPath>();
+                if (level.splines == null) level.splines = new List<Spline>();
             }
 
-            // 3. Fix pVar indices and references
-            Console.WriteLine("  Running pVar index validation before save...");
-            MobySwapper.ValidateAndFixPvarIndices(level);
-
-            // 4. Ensure critical collections are not null
+            // 3. Ensure other critical collections are not null
             if (level.pVars == null) level.pVars = new List<byte[]>();
-            if (level.splines == null) level.splines = new List<Spline>();
-            if (level.grindPaths == null) level.grindPaths = new List<GrindPath>();
 
-            // 5. Clear chunk data to prevent saving them
+            // 4. Clear chunk data to prevent saving them
             level.terrainChunks = new List<Terrain>();
             level.collisionChunks = new List<Collision>();
             level.collBytesChunks = new List<byte[]>();
@@ -275,7 +262,7 @@ namespace GeometrySwapper
                 level.levelVariables.chunkCount = 0;
             }
 
-            // 6. Update transform matrices
+            // 5. Update transform matrices
             if (level.mobs != null)
             {
                 foreach (var moby in level.mobs)

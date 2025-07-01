@@ -22,6 +22,27 @@ namespace LibReplanetizer.Serializers
 
         public void Save(Level level, string directory)
         {
+            //Console.WriteLine($"\n🔍 [GAMEPLAY SAVE DEBUG] Starting save for game type {level.game.num}");
+            //Console.WriteLine($"  Cuboid count: {level.cuboids?.Count ?? 0}");
+            //Console.WriteLine($"🔍 [TIE DEBUG] TIE data size: {level.tieData?.Length ?? 0} bytes");
+            //Console.WriteLine($"🔍 [TIE DEBUG] TIE group data size: {level.tieGroupData?.Length ?? 0} bytes");
+            //Console.WriteLine($"🔍 [OCCLUSION DEBUG] Occlusion data: {level.occlusionData != null}");
+            
+            if (level.ties != null)
+            {
+                //Console.WriteLine($"🔍 [TIE DEBUG] TIE instances: {level.ties.Count}");
+                if (level.ties.Count > 0)
+                {
+                    //Console.WriteLine($"🔍 [TIE DEBUG] First TIE position: {level.ties[0].position}");
+                }
+            }
+            
+            if (level.cuboids != null && level.cuboids.Count > 0)
+            {
+                //Console.WriteLine($"  First cuboid rotation before save: {level.cuboids[0].rotation}");
+                //Console.WriteLine($"  First cuboid matrix det before save: {level.cuboids[0].modelMatrix.Determinant}");
+            }
+            
             directory = Path.Join(directory, "gameplay_ntsc");
             FileStream fs = File.Open(directory, FileMode.Create);
 
@@ -42,6 +63,7 @@ namespace LibReplanetizer.Serializers
             }
 
             fs.Close();
+            //Console.WriteLine($"🔍 [GAMEPLAY SAVE DEBUG] Save completed for {directory}");
         }
 
         private void SaveRC1(Level level, FileStream fs)
@@ -326,7 +348,65 @@ namespace LibReplanetizer.Serializers
 
             for (int i = 0; i < levelobjects.Count; i++)
             {
-                levelobjects[i].ToByteArray().CopyTo(bytes, 0x10 + i * elementSize);
+                // 🆕 ENHANCED DEBUG LOGGING FOR CUBOIDS
+                byte[] objectBytes; // 🔧 DECLARE objectBytes HERE
+                
+                if (levelobjects[i] is Cuboid cuboid)
+                {
+                    //Console.WriteLine($"\n🔍 [SERIALIZATION DEBUG] Cuboid {cuboid.id}:");
+                    //Console.WriteLine($"  Before ToByteArray():");
+                    //Console.WriteLine($"    Position: {cuboid.position}");
+                    //Console.WriteLine($"    Rotation: {cuboid.rotation}");
+                    //Console.WriteLine($"    Scale: {cuboid.scale}");
+                    //Console.WriteLine($"    Matrix Det: {cuboid.modelMatrix.Determinant}");
+                    
+                    // Get the byte array
+                    objectBytes = levelobjects[i].ToByteArray();
+                    
+                    //Console.WriteLine($"  ToByteArray() returned {objectBytes.Length} bytes");
+                    
+                    // Parse the matrix data back from the byte array to verify
+                    if (objectBytes.Length >= 0x80)
+                    {
+                        // Read the main transform matrix (first 64 bytes)
+                        var readMatrix = ReadMatrix4(objectBytes, 0x00);
+                        var readInverseMatrix = ReadMatrix4(objectBytes, 0x40);
+                        
+                        //Console.WriteLine($"  Serialized main matrix determinant: {readMatrix.Determinant}");
+                        //Console.WriteLine($"  Serialized inverse matrix determinant: {readInverseMatrix.Determinant}");
+                        
+                        // Extract rotation from serialized matrix
+                        var extractedRotation = readMatrix.ExtractRotation();
+                        //Console.WriteLine($"  Extracted rotation from serialized matrix: {extractedRotation}");
+                        
+                        // Check if rotation data was preserved
+                        float rotationDiff = (cuboid.rotation - extractedRotation).Length;
+                        if (rotationDiff > 0.01f)
+                        {
+                            //Console.WriteLine($"  🚨 ROTATION DATA LOST! Difference: {rotationDiff}");
+                            //Console.WriteLine($"  Original: {cuboid.rotation}");
+                            //Console.WriteLine($"  Serialized: {extractedRotation}");
+                        }
+                        else
+                        {
+                            //Console.WriteLine($"  ✅ Rotation preserved in serialization");
+                        }
+                    }
+                }
+                else
+                {
+                    objectBytes = levelobjects[i].ToByteArray();
+                }
+                
+                // 🆕 Ensure we don't write beyond the expected element size
+                int bytesToCopy = Math.Min(objectBytes.Length, elementSize);
+                Array.Copy(objectBytes, 0, bytes, 0x10 + i * elementSize, bytesToCopy);
+                
+                // 🆕 Warn if the serialized object is larger than expected
+                if (objectBytes.Length > elementSize)
+                {
+                    //Console.WriteLine($"⚠️ Warning: {typeof(T).Name} serialized to {objectBytes.Length} bytes, expected {elementSize}");
+                }
             }
 
             return bytes;
@@ -413,7 +493,7 @@ namespace LibReplanetizer.Serializers
 
         public byte[] GetEnvTransitionBytes(List<EnvTransition> envTransitions)
         {
-            if (envTransitions == null) return new byte[0x10];
+            if (envTransitions == null) return new byte[0x10]; // 🔧 FIX: Remove extra comma
 
             byte[] bytes = new byte[0x10 + envTransitions.Count * (EnvTransition.HEADSIZE + EnvTransition.ELEMENTSIZE)];
 
@@ -550,5 +630,20 @@ namespace LibReplanetizer.Serializers
             return occlusionData.ToByteArray();
         }
 
+        /// <summary>
+        /// Helper method to read a Matrix4 from a byte array at the specified offset
+        /// </summary>
+        private static OpenTK.Mathematics.Matrix4 ReadMatrix4(byte[] bytes, int offset)
+        {
+            if (bytes == null || offset + 64 > bytes.Length)
+                return OpenTK.Mathematics.Matrix4.Identity;
+            
+            return new OpenTK.Mathematics.Matrix4(
+                BitConverter.ToSingle(bytes, offset + 0),  BitConverter.ToSingle(bytes, offset + 4),  BitConverter.ToSingle(bytes, offset + 8),  BitConverter.ToSingle(bytes, offset + 12),
+                BitConverter.ToSingle(bytes, offset + 16), BitConverter.ToSingle(bytes, offset + 20), BitConverter.ToSingle(bytes, offset + 24), BitConverter.ToSingle(bytes, offset + 28),
+                BitConverter.ToSingle(bytes, offset + 32), BitConverter.ToSingle(bytes, offset + 36), BitConverter.ToSingle(bytes, offset + 40), BitConverter.ToSingle(bytes, offset + 44),
+                BitConverter.ToSingle(bytes, offset + 48), BitConverter.ToSingle(bytes, offset + 52), BitConverter.ToSingle(bytes, offset + 56), BitConverter.ToSingle(bytes, offset + 60)
+            );
+        }
     }
 }

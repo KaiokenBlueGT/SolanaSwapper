@@ -1561,14 +1561,12 @@ namespace GeometrySwapper
                 Console.Write("\nSave changes to the target level? (y/n): ");
                 if (Console.ReadLine()?.Trim().ToLower() == "y")
                 {
-                    Console.WriteLine("Saving target level...");
-                    
+                    Console.WriteLine("Saving target level with Moby Importer's validation logic...");
+
                     try
                     {
-                        PrepareLevelForSave(targetLevel);
-                        Console.WriteLine($"Saving level to {targetPath}...");
-                        targetLevel.Save(targetPath);
-                        Console.WriteLine("✅ Target level saved successfully");
+                        // Use the robust save method from MobyImporter
+                        MobyImporter.SaveLevelWithGrindPathValidation(targetLevel);
                     }
                     catch (Exception ex)
                     {
@@ -1576,7 +1574,7 @@ namespace GeometrySwapper
                     }
                 }
             }
-            
+
             Console.WriteLine("\nPress Enter to return to main menu...");
             Console.ReadLine();
         }

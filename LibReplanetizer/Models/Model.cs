@@ -298,5 +298,20 @@ namespace LibReplanetizer.Models
             return indexBuffer;
         }
 
+        public enum PrimitiveType
+        {
+            None = 0,
+            Points = 1,
+            Lines = 2,
+            LineLoop = 3,
+            LineStrip = 4,
+            Triangles = 5,
+            TriangleStrip = 6,
+            TriangleFan = 7,
+            Quads = 8
+        }
+
+        public PrimitiveType primitiveType { get; set; } = PrimitiveType.Triangles;
+
     }
 }

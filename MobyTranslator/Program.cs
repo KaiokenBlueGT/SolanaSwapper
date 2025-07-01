@@ -27,7 +27,7 @@ namespace MobyTranslator
             Console.WriteLine(">>> BUILD 31, May 21st, 2025 - Added Moby Conversion Logic <<<");
 
             string inputEngine = @"C:\Users\Ryan_\Downloads\temp\Oltanis_RaC1\engine.ps3";
-            string outputDir = @"C:\Users\Ryan_\Downloads\temp\Oltanis_RaC2Port\";
+            string outputDir = @"C:\Users\Ryan_\Downloads\temp\Quartu_RaC2_Converted\";
             Directory.CreateDirectory(outputDir); // Ensure output directory exists
 
             Console.WriteLine($"📂 Loading RC1 level: {inputEngine}");

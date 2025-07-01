@@ -1,4 +1,4 @@
-// Copyright (C) 2018-2021, The Replanetizer Contributors.
+﻿// Copyright (C) 2018-2021, The Replanetizer Contributors.
 // Replanetizer is free software: you can redistribute it
 // and/or modify it under the terms of the GNU General Public
 // License as published by the Free Software Foundation,
@@ -42,7 +42,28 @@ namespace Replanetizer.Frames
                 Texture t = textures[i];
 
                 ImGui.BeginChild("imageChild_" + prefix + i, ITEM_SIZE, ImGuiChildFlags.None);
-                ImGui.Image((IntPtr) textureIds[t].textureID, IMAGE_SIZE);
+                
+                // 🔧 ADD BETTER TEXTURE VALIDATION
+                if (textureIds.ContainsKey(t) && textureIds[t] != null)
+                {
+                    try
+                    {
+                        ImGui.Image((IntPtr) textureIds[t].textureID, IMAGE_SIZE);
+                    }
+                    catch (Exception)
+                    {
+                        // Fallback: Show a placeholder or error indicator
+                        ImGui.Text("⚠️");
+                        ImGui.Text("BAD");
+                    }
+                }
+                else
+                {
+                    // Show placeholder for missing textures
+                    ImGui.Text("❌");
+                    ImGui.Text("MISS");
+                }
+                
                 string idText = prefix + t.id;
                 float idWidth = ImGui.CalcTextSize(idText).X;
                 ImGui.SetCursorPosX(ITEM_SIZE.X - idWidth);
@@ -59,12 +80,39 @@ namespace Replanetizer.Frames
                             TextureIO.ExportTexture(t, targetFile, true);
                         }
                     }
+                    // 🆕 ADD DEBUG INFO
+                    if (ImGui.Button("Debug Info"))
+                    {
+                        Console.WriteLine($"Texture {t.id}: {t.width}x{t.height}, Data: {t.data?.Length ?? 0} bytes");
+                        Console.WriteLine($"  Has GL Texture: {textureIds.ContainsKey(t)}");
+                        if (textureIds.ContainsKey(t))
+                        {
+                            Console.WriteLine($"  GL Texture ID: {textureIds[t]?.textureID ?? 0}");
+                        }
+                    }
                     ImGui.EndPopup();
                 }
                 else if (ImGui.IsItemHovered())
                 {
                     ImGui.BeginTooltip();
-                    ImGui.Image((IntPtr) textureIds[t].textureID, new System.Numerics.Vector2(t.width, t.height));
+                    
+                    // 🔧 ADD VALIDATION HERE TOO
+                    if (textureIds.ContainsKey(t) && textureIds[t] != null)
+                    {
+                        try
+                        {
+                            ImGui.Image((IntPtr) textureIds[t].textureID, new System.Numerics.Vector2(t.width, t.height));
+                        }
+                        catch (Exception)
+                        {
+                            ImGui.Text("❌ Failed to display texture");
+                        }
+                    }
+                    else
+                    {
+                        ImGui.Text("❌ Texture not loaded");
+                    }
+                    
                     string resolutionText = $"{t.width}x{t.height}";
                     float resolutionWidth = ImGui.CalcTextSize(resolutionText).X;
                     ImGui.SetCursorPosX(t.width - resolutionWidth);
