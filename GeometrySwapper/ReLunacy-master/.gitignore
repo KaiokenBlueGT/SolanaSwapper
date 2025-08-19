@@ -1,0 +1,9 @@
+*.obj
+*.dds
+*.dae
+.vscode
+.vs
+*/bin
+*/obj
+*.ini
+recovery
